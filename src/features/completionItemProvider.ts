@@ -8,7 +8,7 @@ import AbstractSupport from './abstractProvider';
 import * as protocol from '../omnisharp/protocol';
 import * as serverUtils from '../omnisharp/utils';
 import { createRequest } from '../omnisharp/typeConversion';
-import { CompletionItemProvider, CompletionItem, CompletionItemKind, CompletionContext, CompletionTriggerKind, CancellationToken, TextDocument, Range, Position, CompletionList } from 'vscode';
+import { CompletionItemProvider, CompletionItem, CompletionItemKind, CompletionContext, CompletionTriggerKind, CancellationToken, TextDocument, Range, Position, CompletionList, TextEdit } from 'vscode';
 
 export default class OmniSharpCompletionItemProvider extends AbstractSupport implements CompletionItemProvider {
 
@@ -62,6 +62,29 @@ export default class OmniSharpCompletionItemProvider extends AbstractSupport imp
                 completion.documentation = extractSummaryText(response.Description);
                 completion.kind = _kinds[response.Kind] || CompletionItemKind.Property;
                 completion.insertText = response.CompletionText.replace(/<>/g, '');
+
+                if (response.OverrideTarget == null) {
+                    completion.insertText = response.CompletionText.replace(/<>/g, '');
+                } else {
+                    completion.insertText = "";
+                    completion.additionalTextEdits = [
+                        TextEdit.delete(new Range(position.line, 0, position.line, position.character))
+                    ];
+                    let req: protocol.V2.RunCodeActionRequest = {
+                        FileName: document.fileName,
+                        Line: position.line + 1,
+                        Column: 1,
+                        WantsTextChanges: true,
+                        WantsAllCodeActionOperations: true,
+                        Name: "Generate_overrides",
+                        Params: { target: response.OverrideTarget }
+                    };
+                    completion.command = {
+                        title: `Override ${response.CompletionText}`,
+                        command: "omnisharp.runCodeAction",
+                        arguments: [req]
+                    };
+                }
 
                 completion.commitCharacters = response.IsSuggestionMode
                     ? OmniSharpCompletionItemProvider.CommitCharactersWithoutSpace

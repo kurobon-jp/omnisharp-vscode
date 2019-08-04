@@ -279,6 +279,7 @@ export interface AutoCompleteResponse {
     Kind: string;
     IsSuggestionMode: boolean;
     Preselect: boolean;
+    OverrideTarget: string;
 }
 
 export interface ProjectInformationResponse {
@@ -494,10 +495,12 @@ export namespace V2 {
     }
 
     export interface RunCodeActionRequest extends Request {
-        Identifier: string;
+        Identifier?: string;
+        Name?: string;
         Selection?: Range;
         WantsTextChanges: boolean;
         WantsAllCodeActionOperations: boolean;
+        Params?: object;
     }
 
     export interface RunCodeActionResponse {
