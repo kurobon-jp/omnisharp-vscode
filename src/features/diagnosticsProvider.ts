@@ -159,17 +159,21 @@ class DiagnosticsProvider extends AbstractSupport {
                 }
             }));
 
-
         this._disposable = new CompositeDisposable(this._diagnostics,
             this._server.onPackageRestore(() => this._validateAllPipe.next(), this),
             this._server.onProjectChange(() => this._validateAllPipe.next(), this),
             this._server.onProjectDiagnosticStatus(this._onProjectAnalysis, this),
-            vscode.workspace.onDidOpenTextDocument(event => this._onDocumentOpenOrChange(event), this),
-            vscode.workspace.onDidChangeTextDocument(event => this._onDocumentOpenOrChange(event.document), this),
+            this._server.onDiagnostic(this._onDiagnostic, this),
+            vscode.workspace.onDidOpenTextDocument(event => this._onDocumentOpen(event), this),
+            vscode.workspace.onDidChangeTextDocument(event => this._onDocumentChange(event.document), this),
             vscode.workspace.onDidCloseTextDocument(this._onDocumentClose, this),
             vscode.window.onDidChangeActiveTextEditor(event => this._onDidChangeActiveTextEditor(event), this),
-            vscode.window.onDidChangeWindowState(event => this._OnDidChangeWindowState(event), this,),
+            vscode.window.onDidChangeWindowState(event => this._OnDidChangeWindowState(event), this),
         );
+
+        for (let document of vscode.workspace.textDocuments) {
+            this._onDocumentOpen(document);
+        }
     }
 
     public dispose = () => {
@@ -201,11 +205,11 @@ class DiagnosticsProvider extends AbstractSupport {
     private _onDidChangeActiveTextEditor(textEditor: vscode.TextEditor): void {
         // active text editor can be undefined.
         if (textEditor != undefined && textEditor.document != null) {
-            this._onDocumentOpenOrChange(textEditor.document);
+            this._onDocumentChange(textEditor.document);
         }
     }
 
-    private _onDocumentOpenOrChange(document: vscode.TextDocument): void {
+    private _onDocumentChange(document: vscode.TextDocument): void {
         if (this.shouldIgnoreDocument(document)) {
             return;
         }
@@ -219,16 +223,73 @@ class DiagnosticsProvider extends AbstractSupport {
         }
     }
 
+    private _onDiagnostic(event: protocol.Diagnostic) {
+        let entries: [vscode.Uri, vscode.Diagnostic[]][] = [];
+        let lastEntry: [vscode.Uri, vscode.Diagnostic[]];
+        for (let result of event.Results) {
+            let quickFixes = result.QuickFixes.sort((a, b) => a.FileName.localeCompare(b.FileName));
+            for (let diagnosticInFile of this._mapQuickFixesAsDiagnosticsInFile(quickFixes)) {
+                let uri = vscode.Uri.file(diagnosticInFile.fileName);
+
+                if (lastEntry && lastEntry[0].toString() === uri.toString()) {
+                    lastEntry[1].push(diagnosticInFile.diagnostic);
+                } else {
+                    // We're replacing all diagnostics in this file. Pushing an entry with undefined for
+                    // the diagnostics first ensures that the previous diagnostics for this file are
+                    // cleared. Otherwise, new entries will be merged with the old ones.
+                    entries.push([uri, undefined]);
+                    lastEntry = [uri, [diagnosticInFile.diagnostic]];
+                    entries.push(lastEntry);
+                }
+            }
+        }
+
+        // replace all entries
+        this._diagnostics.set(entries);
+    }
+
     private _onProjectAnalysis(event: protocol.ProjectDiagnosticStatus) {
         if (event.Status == DiagnosticStatus.Ready) {
             this._validateAllPipe.next();
         }
     }
 
-    private _onDocumentClose(document: vscode.TextDocument): void {
-        if (this._diagnostics.has(document.uri) && !this._validationAdvisor.shouldValidateAll()) {
+    private _onDocumentOpen(document: vscode.TextDocument): NodeJS.Timeout {
+        if (!this._validationAdvisor.shouldValidateAll()) {
+            return;
+        }
+
+        return setTimeout(async () => {
+            try {
+                await serverUtils.fileOpen(this._server, { FileName: document.fileName }, new vscode.CancellationTokenSource().token);
+
+                if (this.shouldIgnoreDocument(document)) {
+                    return;
+                }
+                await serverUtils.updateBuffer(this._server, { Buffer: document.getText(), FileName: document.fileName });
+
+                this._onDocumentChange(document);
+            } catch (error) {
+                console.error(error);
+                return;
+            }
+        }, 4000);
+    }
+
+    private _onDocumentClose(document: vscode.TextDocument): NodeJS.Timeout {
+        if (!this._validationAdvisor.shouldValidateAll()) {
+            return;
+        }
+
+        if (this._diagnostics.has(document.uri)) {
             this._diagnostics.delete(document.uri);
         }
+
+        return setTimeout(async () => {
+            await serverUtils.fileClose(this._server, { FileName: document.fileName }, new vscode.CancellationTokenSource().token).catch(error => {
+                console.error(error);
+            });
+        }, 2000);
     }
 
     private _validateDocument(document: vscode.TextDocument): NodeJS.Timeout {
@@ -337,8 +398,7 @@ class DiagnosticsProvider extends AbstractSupport {
         return { diagnostic: diagnostic, fileName: quickFix.FileName };
     }
 
-    private _getDiagnosticDisplay(quickFix: protocol.QuickFix, severity: vscode.DiagnosticSeverity | "hidden"): { severity: vscode.DiagnosticSeverity | "hidden", isFadeout: boolean }
-    {
+    private _getDiagnosticDisplay(quickFix: protocol.QuickFix, severity: vscode.DiagnosticSeverity | "hidden"): { severity: vscode.DiagnosticSeverity | "hidden", isFadeout: boolean } {
         // CS0162 & CS8019 => Unnused using and unreachable code.
         // These hard coded values bring some goodnes of fading even when analyzers are disabled.
         let isFadeout = (quickFix.Tags && !!quickFix.Tags.find(x => x.toLowerCase() == 'unnecessary')) || quickFix.Id == "CS0162" || quickFix.Id == "CS8019";
@@ -347,7 +407,7 @@ class DiagnosticsProvider extends AbstractSupport {
             // Theres no such thing as hidden severity in VSCode,
             // however roslyn uses commonly analyzer with hidden to fade out things.
             // Without this any of those doesn't fade anything in vscode.
-            return { severity: vscode.DiagnosticSeverity.Hint , isFadeout };
+            return { severity: vscode.DiagnosticSeverity.Hint, isFadeout };
         }
 
         return { severity: severity, isFadeout };

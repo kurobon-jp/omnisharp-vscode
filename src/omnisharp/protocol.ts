@@ -29,6 +29,8 @@ export module Requests {
     export const UpdateBuffer = '/updatebuffer';
     export const Metadata = '/metadata';
     export const ReAnalyze = '/reanalyze';
+    export const Open = '/open';
+    export const Close = '/close';
 }
 
 export namespace WireProtocol {
@@ -253,6 +255,18 @@ export interface GetCodeActionsResponse {
     CodeActions: string[];
 }
 
+export interface FileOpenRequest extends Request {
+}
+
+export interface FileOpenResponse {
+}
+
+export interface FileCloseRequest extends Request {
+}
+
+export interface FileCloseResponse {
+}
+
 export interface SyntaxFeature {
     Name: string;
     Data: string;
@@ -297,6 +311,15 @@ export interface ProjectDiagnosticStatus {
     Status: DiagnosticStatus;
     ProjectFilePath: string;
     Type: "background";
+}
+
+export interface DiagnosticResult {
+    FileName: string;
+    QuickFixes: QuickFix[];
+}
+
+export interface Diagnostic {
+    Results: DiagnosticResult[];
 }
 
 export interface WorkspaceInformationResponse {

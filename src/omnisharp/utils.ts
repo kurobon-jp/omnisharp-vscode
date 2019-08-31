@@ -67,6 +67,14 @@ export async function requestWorkspaceInformation(server: OmniSharpServer) {
     return server.makeRequest<protocol.WorkspaceInformationResponse>(protocol.Requests.Projects);
 }
 
+export async function fileOpen(server: OmniSharpServer, request: protocol.FileOpenRequest, token: vscode.CancellationToken) {
+    return server.makeRequest<protocol.FileOpenResponse>(protocol.Requests.Open, request, token);
+}
+
+export async function fileClose(server: OmniSharpServer, request: protocol.FileCloseRequest, token: vscode.CancellationToken) {
+    return server.makeRequest<protocol.FileCloseResponse>(protocol.Requests.Close, request, token);
+}
+
 export async function runCodeAction(server: OmniSharpServer, request: protocol.V2.RunCodeActionRequest) {
     return server.makeRequest<protocol.V2.RunCodeActionResponse>(protocol.V2.Requests.RunCodeAction, request);
 }
