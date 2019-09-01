@@ -224,28 +224,22 @@ class DiagnosticsProvider extends AbstractSupport {
     }
 
     private _onDiagnostic(event: protocol.Diagnostic) {
-        let entries: [vscode.Uri, vscode.Diagnostic[]][] = [];
-        let lastEntry: [vscode.Uri, vscode.Diagnostic[]];
         for (let result of event.Results) {
-            let quickFixes = result.QuickFixes.sort((a, b) => a.FileName.localeCompare(b.FileName));
-            for (let diagnosticInFile of this._mapQuickFixesAsDiagnosticsInFile(quickFixes)) {
-                let uri = vscode.Uri.file(diagnosticInFile.fileName);
-
-                if (lastEntry && lastEntry[0].toString() === uri.toString()) {
-                    lastEntry[1].push(diagnosticInFile.diagnostic);
-                } else {
-                    // We're replacing all diagnostics in this file. Pushing an entry with undefined for
-                    // the diagnostics first ensures that the previous diagnostics for this file are
-                    // cleared. Otherwise, new entries will be merged with the old ones.
-                    entries.push([uri, undefined]);
-                    lastEntry = [uri, [diagnosticInFile.diagnostic]];
-                    entries.push(lastEntry);
+            let quickFixes = result.QuickFixes;
+            let uri = vscode.Uri.file(result.FileName);
+            // Easy case: If there are no diagnostics in the file, we can clear it quickly.
+            if (quickFixes.length === 0) {
+                if (this._diagnostics.has(uri)) {
+                    this._diagnostics.delete(uri);
                 }
-            }
-        }
 
-        // replace all entries
-        this._diagnostics.set(entries);
+                return;
+            }
+
+            // (re)set new diagnostics for this document
+            let diagnosticsInFile = this._mapQuickFixesAsDiagnosticsInFile(quickFixes);
+            this._diagnostics.set(uri, diagnosticsInFile.map(x => x.diagnostic));
+        }
     }
 
     private _onProjectAnalysis(event: protocol.ProjectDiagnosticStatus) {
