@@ -342,7 +342,12 @@ class DiagnosticsProvider extends AbstractSupport {
             let value = await serverUtils.codeCheck(this._server, { FileName: null }, new vscode.CancellationTokenSource().token);
 
             let quickFixes = value.QuickFixes
-                .sort((a, b) => a.FileName.localeCompare(b.FileName));
+                .sort((a, b) =>  {
+                    if (a.FileName == b.FileName) {
+                        return a.Id.localeCompare(b.Id);
+                    }
+                    return a.FileName.localeCompare(b.FileName);
+                });
 
             let entries: [vscode.Uri, vscode.Diagnostic[]][] = [];
             let lastEntry: [vscode.Uri, vscode.Diagnostic[]];

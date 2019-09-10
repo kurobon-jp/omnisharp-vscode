@@ -32,6 +32,7 @@ import Disposable from '../Disposable';
 import OptionProvider from '../observers/OptionProvider';
 import { IMonoResolver } from '../constants/IMonoResolver';
 import { removeBOMFromBuffer, removeBOMFromString } from '../utils/removeBOM';
+import { unzip } from 'zlib';
 
 enum ServerState {
     Starting,
@@ -614,14 +615,46 @@ export class OmniSharpServer {
             });
         });
 
-        const lineReceived = this._onLineReceived.bind(this);
+        if (false) {
+            let buffer = Buffer.alloc(0);
+            let dataSize = -1;
 
-        this._readLine.addListener('line', lineReceived);
+            this._serverProcess.stdout.on('data', (chunk) => {
+                let chunkSize = chunk.length;
+                let chunkOffset = 0;
 
-        this._disposables.add(new Disposable(() => {
-            this._readLine.removeListener('line', lineReceived);
-        }));
+                while (chunkSize > chunkOffset) {
+                    if (dataSize < 0) {
+                        buffer = Buffer.alloc(0);
+                        dataSize = chunk.readIntLE(chunkOffset, 4);
+                        chunkOffset += 4;
+                    }
 
+                    if (dataSize <= buffer.length + chunkSize - chunkOffset) {
+                        const length = dataSize - buffer.length;
+                        buffer = Buffer.concat([buffer, chunk.slice(chunkOffset, chunkOffset += length)]);
+                        unzip(buffer, (error: Error, result: Buffer) => {
+                            let str = result.toString('utf-8', 0, result.length);
+                            this._onLineReceived(str);
+                        });
+                        dataSize = -1;
+                    } else {
+                        buffer = Buffer.concat([buffer, chunk.slice(chunkOffset, chunkSize + chunkOffset)]);
+                        return;
+                    }
+
+                }
+            });
+        }
+        if (true) {
+            const lineReceived = this._onLineReceived.bind(this);
+
+            this._readLine.addListener('line', lineReceived);
+
+            this._disposables.add(new Disposable(() => {
+                this._readLine.removeListener('line', lineReceived);
+            }));
+        }
         return promise;
     }
 
