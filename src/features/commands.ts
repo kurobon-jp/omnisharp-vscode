@@ -20,7 +20,6 @@ import { PlatformInformation } from '../platform';
 import CompositeDisposable from '../CompositeDisposable';
 import OptionProvider from '../observers/OptionProvider';
 import reportIssue from './reportIssue';
-import setNextStatement from '../coreclr-debug/setNextStatement';
 import { IMonoResolver } from '../constants/IMonoResolver';
 import { getDotnetInfo } from '../utils/getDotnetInfo';
 
@@ -31,6 +30,9 @@ export default function registerCommands(server: OmniSharpServer, platformInfo: 
     disposable.add(vscode.commands.registerCommand('o.showOutput', () => eventStream.post(new ShowOmniSharpChannel())));
     disposable.add(vscode.commands.registerCommand('dotnet.restore.project', async () => pickProjectAndDotnetRestore(server, eventStream)));
     disposable.add(vscode.commands.registerCommand('dotnet.restore.all', async () => dotnetRestoreAllProjects(server, eventStream)));
+
+    disposable.add(vscode.commands.registerCommand('o.reanalyze.allProjects', async () => reAnalyzeAllProjects(server, eventStream)));
+    disposable.add(vscode.commands.registerCommand('o.reanalyze.currentProject', async () => reAnalyzeCurrentProject(server, eventStream)));
 
     // register empty handler for csharp.installDebugger
     // running the command activates the extension, which is all we need for installation to kickoff
@@ -46,8 +48,6 @@ export default function registerCommands(server: OmniSharpServer, platformInfo: 
 
     // Register command for remote process picker for attach
     disposable.add(vscode.commands.registerCommand('csharp.listRemoteProcess', async (args) => RemoteAttachPicker.ShowAttachEntries(args, platformInfo)));
-
-    disposable.add(vscode.commands.registerCommand('csharp.setNextStatement', async () => setNextStatement()));
 
     // Register command for adapter executable command.
     disposable.add(vscode.commands.registerCommand('csharp.coreclrAdapterExecutableCommand', async (args) => getAdapterExecutionCommand(platformInfo, eventStream, packageJSON, extensionPath)));
@@ -130,6 +130,16 @@ async function pickProjectAndDotnetRestore(server: OmniSharpServer, eventStream:
     if (command) {
         return command.execute();
     }
+}
+
+async function reAnalyzeAllProjects(server: OmniSharpServer, eventStream: EventStream): Promise<void> {
+    await serverUtils.reAnalyze(server, {});
+}
+
+async function reAnalyzeCurrentProject(server: OmniSharpServer, eventStream: EventStream): Promise<void> {
+    await serverUtils.reAnalyze(server, {
+        fileName: vscode.window.activeTextEditor.document.uri.fsPath
+    });
 }
 
 async function dotnetRestoreAllProjects(server: OmniSharpServer, eventStream: EventStream): Promise<void> {
